@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Void Runner</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Courier New', monospace; }
+  canvas { display: block; border: 1px solid #222; }
+  #hud { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); color: #0f0; font-size: 16px; display: flex; gap: 20px; z-index: 10; text-shadow: 0 0 8px #0f0; }
+  #ui-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; z-index: 20; pointer-events: none; }
+  #ui-overlay.active { pointer-events: all; }
+  #menu, #game-over { background: rgba(0,0,0,0.85); padding: 40px 60px; border: 2px solid #0f0; border-radius: 12px; text-align: center; color: #0f0; box-shadow: 0 0 40px rgba(0,255,0,0.3); }
+  #menu h1 { font-size: 48px; margin-bottom: 8px; text-shadow: 0 0 20px #0f0; letter-spacing: 6px; }
+  #menu p { color: #0a0; margin-bottom: 20px; font-size: 14px; }
+  .controls { text-align: left; color: #0a0; font-size: 13px; margin-bottom: 24px; }
+  .controls div { margin: 6px 0; }
+  .controls span { color: #0f0; }
+  button { background: #0a0; color: #000; border: none; padding: 12px 36px; font-size: 18px; font-family: 'Courier New', monospace; font-weight: bold; cursor: pointer; border-radius: 6px; transition: all 0.2s; letter-spacing: 2px; }
+  button:hover { background: #0f0; box-shadow: 0 0 20px #0f0; transform: scale(1.05); }
+  #game-over h1 { font-size: 36px; color: #f00; text-shadow: 0 0 20px #f00; margin-bottom: 12px; }
+  #game-over p { color: #f66; margin-bottom: 8px; }
+  #game-over span { color: #ff0; }
+  #powerup-text { color: #ff0; text-shadow: 0 0 8px #ff0; }
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<div id="hud">
+  <div>SCORE: <span id="score">0</span></div>
+  <div>HIGH: <span id="highscore">0</span></div>
+  <div>LIVES: <span id="lives">3</span></div>
+  <div id="powerup-text"></div>
+</div>
+
+<div id="ui-overlay" class="active">
+  <div id="menu">
+    <h1>VOID RUNNER</h1>
+    <p>Escape the asteroid field. Survive.</p>
+    <div class="controls">
+      <div><span>&#8592; &#8593; &#8594; &#8595;</span> or <span>W A S D</span> — Move</div>
+      <div><span>Space</span> — Shoot</div>
+    </div>
+    <br>
+    <button id="start-btn">LAUNCH</button>
+  </div>
+  <div id="game-over" style="display:none">
+    <h1>DESTROYED</h1>
+    <p>Score: <span id="final-score">0</span></p>
+    <p>Best: <span id="best-score">0</span></p>
+    <button id="restart-btn">RETRY</button>
+  </div>
+</div>
+
+<script>
+// === VOID RUNNER — Single-File Arcade Game ===
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+// Canvas sizing
+function resize() {
+  canvas.width = Math.min(800, window.innerWidth - 20);
+  canvas.height = Math.min(600, window.innerHeight - 20);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Game state
+let gameState = 'menu'; // menu, playing, gameover
+let score = 0;
+let highScore = parseInt(localStorage.getItem('voidRunnerHigh') || '0');
+let difficulty = 1;
+let frameCount = 0;
+
+// Player
+const player = {
+  x: 0, y: 0, w: 30, h: 30,
+  speed: 5, shooting: false,
+  shootCooldown: 0, lives: 3,
+  shielded: false, shieldTimer: 0,
+  rapidFire: false, rapidTimer: 0,
+  multiShot: false, multiTimer: 0
+};
+
+// Arrays
+let asteroids = [];
+let bullets = [];
+let particles = [];
+let powerups = [];
+let stars = [];
+
+// Input
+const keys = {};
+document.addEventListener('keydown', e => {
+  keys[e.key.toLowerCase()] = true;
+  if (e.key === ' ') e.preventDefault();
+});
+document.addEventListener('keyup', e => {
+  keys[e.key.toLowerCase()] = false;
+});
+
+// Stars background
+for (let i = 0; i < 150; i++) {
+  stars.push({
+    x: Math.random() * canvas.width,
+    y: Math.random() * canvas.height,
+    size: Math.random() * 2 + 0.5,
+    speed: Math.random() * 1 + 0.3,
+    brightness: Math.random()
+  });
+}
+
+// HUD
+const scoreEl = document.getElementById('score');
+const highScoreEl = document.getElementById('highscore');
+const livesEl = document.getElementById('lives');
+const powerupTextEl = document.getElementById('powerup-text');
+const uiOverlay = document.getElementById('ui-overlay');
+const menuEl = document.getElementById('menu');
+const gameOverEl = document.getElementById('game-over');
+const finalScoreEl = document.getElementById('final-score');
+const bestScoreEl = document.getElementById('best-score');
+
+highScoreEl.textContent = highScore;
+
+// === Game functions ===
+
+function resetGame() {
+  player.x = canvas.width / 2 - 15;
+  player.y = canvas.height - 60;
+  player.lives = 3;
+  player.shielded = false;
+  player.shieldTimer = 0;
+  player.rapidFire = false;
+  player.rapidTimer = 0;
+  player.multiShot = false;
+  player.multiTimer = 0;
+  player.shootCooldown = 0;
+  asteroids = [];
+  bullets = [];
+  particles = [];
+  powerups = [];
+  score = 0;
+  difficulty = 1;
+  frameCount = 0;
+  scoreEl.textContent = '0';
+  livesEl.textContent = '3';
+  powerupTextEl.textContent = '';
+}
+
+function spawnAsteroid() {
+  const size = Math.random() * 30 + 15;
+  const numVerts = Math.floor(Math.random() * 4) + 6;
+  const vertices = [];
+  for (let i = 0; i < numVerts; i++) {
+    const angle = (i / numVerts) * Math.PI * 2;
+    const r = size * (0.7 + Math.random() * 0.3);
+    vertices.push({ x: Math.cos(angle) * r, y: Math.sin(angle) * r });
+  }
+  asteroids.push({
+    x: Math.random() * (canvas.width - size * 2) + size,
+    y: -size * 2,
+    size: size,
+    speed: (Math.random() * 2 + 1) * difficulty,
+    rotation: Math.random() * Math.PI * 2,
+    rotSpeed: (Math.random() - 0.5) * 0.05,
+    vertices: vertices
+  });
+}
+
+function spawnPowerup() {
+  const types = ['shield', 'rapid', 'multi', 'life'];
+  const type = types[Math.floor(Math.random() * types.length)];
+  const colors = { shield: '#0af', rapid: '#f80', multi: '#f0f', life: '#0f0' };
+  powerups.push({
+    x: Math.random() * (canvas.width - 40) + 20,
+    y: -20,
+    size: 14,
+    speed: 1.5,
+    type: type,
+    color: colors[type],
+    glow: 0,
+    glowDir: 1
+  });
+}
+
+function createExplosion(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = Math.random() * 4 + 1;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1,
+      decay: Math.random() * 0.03 + 0.01,
+      color: color,
+      size: Math.random() * 3 + 1
+    });
+  }
+}
+
+function playerShoot() {
+  const cooldown = player.rapidFire ? 5 : 12;
+  if (player.shootCooldown > 0) return;
+  player.shootCooldown = cooldown;
+
+  if (player.multiShot) {
+    bullets.push({ x: player.x + player.w / 2, y: player.y, vx: 0, vy: -9, size: 3, color: '#f0f' });
+    bullets.push({ x: player.x + player.w / 2, y: player.y, vx: -2.5, vy: -8, size: 3, color: '#f0f' });
+    bullets.push({ x: player.x + player.w / 2, y: player.y, vx: 2.5, vy: -8, size: 3, color: '#f0f' });
+  } else {
+    bullets.push({
+      x: player.x + player.w / 2 - 2,
+      y: player.y,
+      vx: 0, vy: -9,
+      size: 4,
+      color: '#0f0'
+    });
+  }
+}
+
+function applyPowerup(type) {
+  const duration = 400;
+  if (type === 'life') {
+    player.lives = Math.min(player.lives + 1, 5);
+    livesEl.textContent = player.lives;
+    powerupTextEl.textContent = '+1 LIFE!';
+  } else if (type === 'shield') {
+    player.shielded = true;
+    player.shieldTimer = duration;
+    powerupTextEl.textContent = 'SHIELD!';
+  } else if (type === 'rapid') {
+    player.rapidFire = true;
+    player.rapidTimer = duration;
+    powerupTextEl.textContent = 'RAPID FIRE!';
+  } else if (type === 'multi') {
+    player.multiShot = true;
+    player.multiTimer = duration;
+    powerupTextEl.textContent = 'MULTI-SHOT!';
+  }
+  setTimeout(() => { powerupTextEl.textContent = ''; }, 1500);
+}
+
+function drawPlayer() {
+  ctx.save();
+  ctx.translate(player.x + player.w / 2, player.y + player.h / 2);
+
+  // Engine glow
+  if (gameState === 'playing') {
+    const glowSize = 8 + Math.sin(frameCount * 0.3) * 3;
+    const grad = ctx.createRadialGradient(0, player.h / 2 + 5, 0, 0, player.h / 2 + 5, glowSize + 10);
+    grad.addColorStop(0, 'rgba(0,150,255,0.8)');
+    grad.addColorStop(1, 'rgba(0,150,255,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(0, player.h / 2 + 5, glowSize + 10, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Ship body
+  ctx.fillStyle = '#0f0';
+  ctx.strokeStyle = '#0a0';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(0, -player.h / 2);
+  ctx.lineTo(-player.w / 2, player.h / 2);
+  ctx.lineTo(-player.w / 6, player.h / 3);
+  ctx.lineTo(player.w / 6, player.h / 3);
+  ctx.lineTo(player.w / 2, player.h / 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Cockpit
+  ctx.fillStyle = '#0a0';
+  ctx.beginPath();
+  ctx.arc(0, -2, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Shield effect
+  if (player.shielded) {
+    ctx.strokeStyle = `rgba(0,170,255,${0.3 + Math.sin(frameCount * 0.15) * 0.2})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, 22, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawAsteroid(a) {
+  ctx.save();
+  ctx.translate(a.x, a.y);
+  ctx.rotate(a.rotation);
+
+  ctx.fillStyle = '#555';
+  ctx.strokeStyle = '#888';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  if (a.vertices.length > 0) {
+    ctx.moveTo(a.vertices[0].x, a.vertices[0].y);
+    for (let i = 1; i < a.vertices.length; i++) {
+      ctx.lineTo(a.vertices[i].x, a.vertices[i].y);
+    }
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Crater details
+  ctx.fillStyle = '#444';
+  ctx.beginPath();
+  ctx.arc(a.size * 0.2, -a.size * 0.1, a.size * 0.15, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(-a.size * 0.15, a.size * 0.2, a.size * 0.1, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawPowerup(p) {
+  ctx.save();
+  ctx.translate(p.x, p.y);
+
+  p.glow += 0.05 * p.glowDir;
+  if (p.glow > 1) p.glowDir = -1;
+  if (p.glow < 0) p.glowDir = 1;
+
+  const outer = ctx.createRadialGradient(0, 0, p.size * 0.5, 0, 0, p.size + 8);
+  outer.addColorStop(0, p.color + 'cc');
+  outer.addColorStop(1, p.color + '00');
+  ctx.fillStyle = outer;
+  ctx.beginPath();
+  ctx.arc(0, 0, p.size + 8, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = p.color;
+  ctx.beginPath();
+  ctx.arc(0, 0, p.size, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#000';
+  ctx.font = 'bold 12px Courier New';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const icons = { shield: 'S', rapid: 'R', multi: 'M', life: '+' };
+  ctx.fillText(icons[p.type], 0, 0);
+
+  ctx.restore();
+}
+
+function drawBullet(b) {
+  ctx.fillStyle = b.color || '#0f0';
+  ctx.shadowColor = b.color || '#0f0';
+  ctx.shadowBlur = 6;
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, b.size, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+}
+
+// Collision detection
+function circleRect(cx, cy, cr, rx, ry, rw, rh) {
+  const closestX = Math.max(rx, Math.min(cx, rx + rw));
+  const closestY = Math.max(ry, Math.min(cy, ry + rh));
+  const dx = cx - closestX;
+  const dy = cy - closestY;
+  return (dx * dx + dy * dy) < (cr * cr);
+}
+
+function circleCircle(x1, y1, r1, x2, y2, r2) {
+  const dx = x1 - x2;
+  const dy = y1 - y2;
+  return (dx * dx + dy * dy) < ((r1 + r2) * (r1 + r2));
+}
+
+// === Main update ===
+
+function update() {
+  if (gameState !== 'playing') return;
+  frameCount++;
+
+  // Difficulty ramp
+  difficulty = 1 + Math.floor(score / 500) * 0.3;
+  if (difficulty > 4) difficulty = 4;
+
+  // Player movement
+  let dx = 0, dy = 0;
+  if (keys['arrowleft'] || keys['a']) dx -= 1;
+  if (keys['arrowright'] || keys['d']) dx += 1;
+  if (keys['arrowup'] || keys['w']) dy -= 1;
+  if (keys['arrowdown'] || keys['s']) dy += 1;
+  if (dx !== 0 || dy !== 0) {
+    const len = Math.sqrt(dx * dx + dy * dy);
+    dx /= len; dy /= len;
+  }
+  player.x += dx * player.speed;
+  player.y += dy * player.speed;
+  player.x = Math.max(0, Math.min(canvas.width - player.w, player.x));
+  player.y = Math.max(0, Math.min(canvas.height - player.h, player.y));
+
+  // Shooting
+  if (keys[' ']) playerShoot();
+  if (player.shootCooldown > 0) player.shootCooldown--;
+
+  // Powerup timers
+  if (player.shielded) { player.shieldTimer--; if (player.shieldTimer <= 0) player.shielded = false; }
+  if (player.rapidFire) { player.rapidTimer--; if (player.rapidTimer <= 0) player.rapidFire = false; }
+  if (player.multiShot) { player.multiTimer--; if (player.multiTimer <= 0) player.multiShot = false; }
+
+  // Spawn asteroids
+  const spawnRate = Math.max(15, 50 - difficulty * 8);
+  if (frameCount % Math.floor(spawnRate) === 0) spawnAsteroid();
+
+  // Spawn powerups
+  if (frameCount % 400 === 0) spawnPowerup();
+
+  // Update asteroids
+  for (let i = asteroids.length - 1; i >= 0; i--) {
+    const a = asteroids[i];
+    a.y += a.speed;
+    a.rotation += a.rotSpeed;
+    if (a.y > canvas.height + a.size * 2) {
+      asteroids.splice(i, 1);
+      continue;
+    }
+
+    // Collision with player
+    if (!player.shielded && circleRect(a.x, a.y, a.size * 0.8, player.x, player.y, player.w, player.h)) {
+      createExplosion(player.x + player.w / 2, player.y + player.h / 2, '#0f0', 20);
+      asteroids.splice(i, 1);
+      player.lives--;
+      livesEl.textContent = player.lives;
+      if (player.lives <= 0) {
+        gameState = 'gameover';
+        if (score > highScore) {
+          highScore = score;
+          localStorage.setItem('voidRunnerHigh', highScore);
+        }
+        finalScoreEl.textContent = score;
+        bestScoreEl.textContent = highScore;
+        menuEl.style.display = 'none';
+        gameOverEl.style.display = 'block';
+        uiOverlay.classList.add('active');
+        createExplosion(player.x + player.w / 2, player.y + player.h / 2, '#f00', 50);
+        continue;
+      }
+    }
+  }
+
+  // Update bullets
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    b.x += b.vx;
+    b.y += b.vy;
+    if (b.y < -10 || b.y > canvas.height + 10 || b.x < -10 || b.x > canvas.width + 10) {
+      bullets.splice(i, 1);
+      continue;
+    }
+
+    // Bullet vs asteroid
+    for (let j = asteroids.length - 1; j >= 0; j--) {
+      const a = asteroids[j];
+      if (circleCircle(b.x, b.y, b.size, a.x, a.y, a.size * 0.85)) {
+        createExplosion(a.x, a.y, '#f80', 15);
+        asteroids.splice(j, 1);
+        bullets.splice(i, 1);
+        const points = Math.ceil(a.size);
+        score += points;
+        scoreEl.textContent = score;
+
+        // Split big asteroids
+        if (a.size > 25) {
+          for (let k = 0; k < 2; k++) {
+            const newSize = a.size * 0.5;
+            const numVerts = Math.floor(Math.random() * 3) + 5;
+            const verts = [];
+            for (let v = 0; v < numVerts; v++) {
+              const angle = (v / numVerts) * Math.PI * 2;
+              const r = newSize * (0.7 + Math.random() * 0.3);
+              verts.push({ x: Math.cos(angle) * r, y: Math.sin(angle) * r });
+            }
+            asteroids.push({
+              x: a.x + (Math.random() - 0.5) * 20,
+              y: a.y + (Math.random() - 0.5) * 20,
+              size: newSize,
+              speed: a.speed * (0.8 + Math.random() * 0.5),
+              rotation: Math.random() * Math.PI * 2,
+              rotSpeed: (Math.random() - 0.5) * 0.08,
+              vertices: verts
+            });
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  // Update powerups
+  for (let i = powerups.length - 1; i >= 0; i--) {
+    const p = powerups[i];
+    p.y += p.speed;
+    if (p.y > canvas.height + 30) {
+      powerups.splice(i, 1);
+      continue;
+    }
+    if (circleCircle(p.x, p.y, p.size, player.x + player.w / 2, player.y + player.h / 2, player.w / 2)) {
+      applyPowerup(p.type);
+      createExplosion(p.x, p.y, p.color, 10);
+      powerups.splice(i, 1);
+    }
+  }
+
+  // Update particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life -= p.decay;
+    p.vx *= 0.98;
+    p.vy *= 0.98;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  // Update stars
+  for (const s of stars) {
+    s.y += s.speed;
+    if (s.y > canvas.height) { s.y = 0; s.x = Math.random() * canvas.width; }
+  }
+}
+
+// === Main render ===
+
+function render() {
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Stars
+  for (const s of stars) {
+    const alpha = 0.3 + s.brightness * 0.7 + Math.sin(frameCount * 0.02 + s.x) * 0.15;
+    ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+    ctx.fillRect(s.x, s.y, s.size, s.size);
+  }
+
+  if (gameState === 'playing' || gameState === 'gameover') {
+    // Powerups
+    for (const p of powerups) drawPowerup(p);
+
+    // Asteroids
+    for (const a of asteroids) drawAsteroid(a);
+
+    // Bullets
+    for (const b of bullets) drawBullet(b);
+
+    // Particles
+    for (const p of particles) {
+      ctx.globalAlpha = p.life;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Player
+    if (gameState === 'playing') drawPlayer();
+
+    // Difficulty indicator
+    if (difficulty > 1) {
+      ctx.fillStyle = `rgba(255,100,0,0.3)`;
+      ctx.font = '11px Courier New';
+      ctx.textAlign = 'right';
+      ctx.fillText('DIFFICULTY x' + difficulty.toFixed(1), canvas.width - 10, canvas.height - 10);
+    }
+  }
+}
+
+// === Game loop ===
+
+function gameLoop() {
+  update();
+  render();
+  requestAnimationFrame(gameLoop);
+}
+
+// === Event handlers ===
+
+document.getElementById('start-btn').addEventListener('click', () => {
+  resetGame();
+  gameState = 'playing';
+  menuEl.style.display = 'none';
+  gameOverEl.style.display = 'none';
+  uiOverlay.classList.remove('active');
+});
+
+document.getElementById('restart-btn').addEventListener('click', () => {
+  resetGame();
+  gameState = 'playing';
+  gameOverEl.style.display = 'none';
+  uiOverlay.classList.remove('active');
+});
+
+// Start
+highScoreEl.textContent = highScore;
+gameLoop();
+</script>
+</body>
+</html>
