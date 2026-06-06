@@ -1,23 +1,257 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Pixel Dodge — Free Browser Arcade Game | Pixel Forge</title>
-  <meta name="description" content="Pixel Dodge is a free browser arcade game. Dodge falling shapes, chase high scores, and level up. No downloads, no sign-ups — just play." />
-  <meta name="keywords" content="arcade game, reflex game, dodge game, browser game, free game, pixel game, arcade, online game" />
-  <meta name="author" content="Pixel Forge" />
-  <meta name="robots" content="index, follow" />
-  <meta property="og:title" content="Pixel Dodge — Free Browser Arcade Game" />
-  <meta property="og:description" content="Dodge falling shapes. Survive. Chase your high score. Play free in your browser — no downloads." />
-  <meta property="og:type" content="website" />
-  <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Pixel Dodge — Free Browser Arcade Game" />
-  <meta name="twitter:description" content="Dodge falling shapes. Survive. Chase your high score. No downloads. No sign-ups." />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Void Runner — Free Arcade Space Game</title>
+<meta name="description" content="Void Runner is a free browser arcade game. Pilot your ship through an asteroid field. Shoot, dodge, collect power-ups, and survive. No downloads, no sign-ups.">
+<meta name="keywords" content="arcade game, space game, asteroid game, browser game, free game, void runner, canvas game, reflex game, indie game">
+<meta name="author" content="Pixel Forge Test">
+<meta name="robots" content="index, follow">
+
+<!-- Open Graph -->
+<meta property="og:title" content="Void Runner — Free Arcade Space Game">
+<meta property="og:description" content="Pilot your ship through an asteroid field. Shoot, dodge, collect power-ups, survive. Play free in your browser.">
+<meta property="og:type" content="website">
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Void Runner — Free Arcade Space Game">
+<meta name="twitter:description" content="Pilot your ship. Dodge asteroids. Survive. Play free in your browser.">
+
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background: #0a0a1a;
+    color: #e2e8f0;
+    line-height: 1.6;
+  }
+  .hero {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 2rem;
+    background: radial-gradient(ellipse at center, #1a1a3e 0%, #0a0a1a 70%);
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: url("data:image/svg+xml,%3Csvg width='60' height='60' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='2' cy='2' r='1' fill='%23ffffff08'/%3E%3C/svg%3E");
+    opacity: 0.5;
+  }
+  .hero-content { position: relative; z-index: 1; max-width: 700px; }
+  .hero h1 {
+    font-size: clamp(3rem, 8vw, 5rem);
+    font-weight: 900;
+    letter-spacing: 4px;
+    margin-bottom: 0.5rem;
+    background: linear-gradient(135deg, #00ff88, #00aaff, #aa44ff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-shadow: none;
+  }
+  .hero .tagline {
+    font-size: clamp(1.1rem, 3vw, 1.5rem);
+    color: #94a3b8;
+    margin-bottom: 2rem;
+  }
+  .btn-play {
+    display: inline-block;
+    background: linear-gradient(135deg, #00ff88, #00cc6a);
+    color: #0a0a1a;
+    padding: 18px 64px;
+    font-size: 1.4rem;
+    font-weight: 800;
+    text-decoration: none;
+    border-radius: 12px;
+    letter-spacing: 2px;
+    transition: all 0.3s;
+    box-shadow: 0 0 30px rgba(0,255,136,0.3);
+    text-transform: uppercase;
+  }
+  .btn-play:hover {
+    transform: scale(1.05);
+    box-shadow: 0 0 50px rgba(0,255,136,0.5);
+  }
+  .features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 2rem;
+    max-width: 900px;
+    margin: 4rem auto;
+    padding: 0 2rem;
+  }
+  .feature {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 2rem;
+    text-align: center;
+  }
+  .feature .icon { font-size: 2.5rem; margin-bottom: 1rem; }
+  .feature h3 {
+    font-size: 1.2rem;
+    margin-bottom: 0.5rem;
+    color: #00ff88;
+  }
+  .feature p { color: #94a3b8; font-size: 0.95rem; }
+  .controls {
+    max-width: 500px;
+    margin: 3rem auto;
+    padding: 0 2rem;
+    text-align: center;
+  }
+  .controls h2 { font-size: 1.5rem; margin-bottom: 1rem; color: #e2e8f0; }
+  .controls-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    text-align: left;
+  }
+  .control-item {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 1rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+  .control-item .key {
+    background: rgba(0,255,136,0.1);
+    border: 1px solid rgba(0,255,136,0.3);
+    border-radius: 8px;
+    padding: 0.3rem 0.8rem;
+    font-family: 'Courier New', monospace;
+    font-weight: bold;
+    color: #00ff88;
+    font-size: 0.85rem;
+    white-space: nowrap;
+  }
+  .control-item .desc { color: #94a3b8; font-size: 0.9rem; }
+  .powerups {
+    max-width: 900px;
+    margin: 3rem auto;
+    padding: 0 2rem;
+    text-align: center;
+  }
+  .powerups h2 { font-size: 1.5rem; margin-bottom: 1.5rem; }
+  .powerup-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+  }
+  .powerup-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 1.5rem 1rem;
+    text-align: center;
+  }
+  .powerup-card .pu-icon { font-size: 2rem; margin-bottom: 0.5rem; }
+  .powerup-card .pu-name { font-weight: bold; color: #00ff88; font-size: 0.9rem; }
+  .powerup-card .pu-desc { color: #94a3b8; font-size: 0.8rem; margin-top: 0.3rem; }
+  .footer {
+    text-align: center;
+    padding: 3rem 2rem;
+    color: #475569;
+    font-size: 0.85rem;
+  }
+  .footer a { color: #00ff88; text-decoration: none; }
+  @media (max-width: 600px) {
+    .powerup-grid { grid-template-columns: 1fr 1fr; }
+    .controls-grid { grid-template-columns: 1fr; }
+  }
+</style>
 </head>
 <body>
-  <div id="root"></div>
-  <script type="module" src="./src/web/main.tsx"></script>
+
+<section class="hero">
+  <div class="hero-content">
+    <h1>VOID RUNNER</h1>
+    <p class="tagline">Pilot your ship. Dodge asteroids. Survive.</p>
+    <a href="pixel-game.html" class="btn-play">▶ PLAY FREE</a>
+  </div>
+</section>
+
+<section class="features">
+  <div class="feature">
+    <div class="icon">🎯</div>
+    <h3>Reflex-Based Gameplay</h3>
+    <p>Dodge incoming asteroids, shoot them for points, and survive as the difficulty ramps up.</p>
+  </div>
+  <div class="feature">
+    <div class="icon">⚡</div>
+    <h3>Power-Up System</h3>
+    <p>Collect shields, rapid fire, multi-shot, and extra lives to gain the edge.</p>
+  </div>
+  <div class="feature">
+    <div class="icon">📱</div>
+    <h3>Works Everywhere</h3>
+    <p>Desktop with keyboard controls, mobile with touch. 60fps smooth rendering.</p>
+  </div>
+</section>
+
+<section class="powerups">
+  <h2>Power-Ups</h2>
+  <div class="powerup-grid">
+    <div class="powerup-card">
+      <div class="pu-icon">🛡️</div>
+      <div class="pu-name">SHIELD</div>
+      <div class="pu-desc">Take one extra hit</div>
+    </div>
+    <div class="powerup-card">
+      <div class="pu-icon">🔥</div>
+      <div class="pu-name">RAPID FIRE</div>
+      <div class="pu-desc">Double-shot rate</div>
+    </div>
+    <div class="powerup-card">
+      <div class="pu-icon">💥</div>
+      <div class="pu-name">MULTI SHOT</div>
+      <div class="pu-desc">Spread fire pattern</div>
+    </div>
+    <div class="powerup-card">
+      <div class="pu-icon">❤️</div>
+      <div class="pu-name">EXTRA LIFE</div>
+      <div class="pu-desc">One more chance</div>
+    </div>
+  </div>
+</section>
+
+<section class="controls">
+  <h2>Controls</h2>
+  <div class="controls-grid">
+    <div class="control-item">
+      <span class="key">↑ ↓ ← →</span>
+      <span class="desc">Arrow keys to move</span>
+    </div>
+    <div class="control-item">
+      <span class="key">W A S D</span>
+      <span class="desc">Alternative controls</span>
+    </div>
+    <div class="control-item">
+      <span class="key">SPACE</span>
+      <span class="desc">Shoot asteroids</span>
+    </div>
+    <div class="control-item">
+      <span class="key">TOUCH</span>
+      <span class="desc">Drag to move (mobile)</span>
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <p>Built by <a href="#">Pixel Forge Test</a> — A tiny experiment in shipping fast and learning faster.</p>
+  <p>Zero dependencies. Single HTML file. No downloads. No sign-ups.</p>
+</footer>
+
 </body>
 </html>
