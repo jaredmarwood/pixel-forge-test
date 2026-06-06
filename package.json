@@ -7,7 +7,7 @@
     "dev": "concurrently --names \"server,web\" --prefix-colors \"green,magenta\" --kill-others-on-fail \"yarn dev:server\" \"yarn dev:web\"",
     "dev:server": "tsx watch src/server/server.ts",
     "dev:web": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node build-static.mjs",
     "preview": "vite preview --port 3001",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
