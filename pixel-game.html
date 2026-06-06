@@ -17,12 +17,19 @@
   .controls { text-align: left; color: #0a0; font-size: 13px; margin-bottom: 24px; }
   .controls div { margin: 6px 0; }
   .controls span { color: #0f0; }
-  button { background: #0a0; color: #000; border: none; padding: 12px 36px; font-size: 18px; font-family: 'Courier New', monospace; font-weight: bold; cursor: pointer; border-radius: 6px; transition: all 0.2s; letter-spacing: 2px; }
+  button { background: #0a0; color: #000; border: none; padding: 12px 36px; font-size: 18px; font-family: 'Courier New', monospace; font-weight: bold; cursor: pointer; border-radius: 6px; transition: all 0.2s; letter-spacing: 2px; margin: 4px; }
   button:hover { background: #0f0; box-shadow: 0 0 20px #0f0; transform: scale(1.05); }
   #game-over h1 { font-size: 36px; color: #f00; text-shadow: 0 0 20px #f00; margin-bottom: 12px; }
   #game-over p { color: #f66; margin-bottom: 8px; }
   #game-over span { color: #ff0; }
   #powerup-text { color: #ff0; text-shadow: 0 0 8px #ff0; }
+  .go-buttons { margin-top: 16px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .share-btn { background: #0af; border-radius: 6px; }
+  .share-btn:hover { background: #0cf; box-shadow: 0 0 20px #0af; }
+  #share-toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #0f0; color: #000; padding: 8px 20px; border-radius: 6px; font-size: 14px; font-family: 'Courier New', monospace; opacity: 0; transition: opacity 0.3s; z-index: 100; pointer-events: none; }
+  #share-toast.show { opacity: 1; }
+  #mute-btn { position: absolute; top: 10px; right: 10px; z-index: 30; background: rgba(0,0,0,0.5); color: #0f0; border: 1px solid #0f0; padding: 4px 10px; font-size: 12px; font-family: 'Courier New', monospace; cursor: pointer; border-radius: 4px; }
+  #mute-btn:hover { background: rgba(0,255,0,0.2); }
 </style>
 </head>
 <body>
@@ -35,6 +42,8 @@
   <div>LIVES: <span id="lives">3</span></div>
   <div id="powerup-text"></div>
 </div>
+
+<button id="mute-btn">🔊</button>
 
 <div id="ui-overlay" class="active">
   <div id="menu">
@@ -51,12 +60,18 @@
     <h1>DESTROYED</h1>
     <p>Score: <span id="final-score">0</span></p>
     <p>Best: <span id="best-score">0</span></p>
-    <button id="restart-btn">RETRY</button>
+    <p>Survived: <span id="survived-time">0s</span></p>
+    <div class="go-buttons">
+      <button id="restart-btn">RETRY</button>
+      <button id="share-btn" class="share-btn">SHARE SCORE</button>
+    </div>
   </div>
 </div>
 
+<div id="share-toast">Score copied to clipboard!</div>
+
 <script>
-// === VOID RUNNER — Single-File Arcade Game ===
+// === VOID RUNNER — Single-File Arcade Game (Improved) ===
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -75,6 +90,7 @@ let score = 0;
 let highScore = parseInt(localStorage.getItem('voidRunnerHigh') || '0');
 let difficulty = 1;
 let frameCount = 0;
+let startTime = 0; // Track when game started (for survival time)
 
 // Player
 const player = {
@@ -162,8 +178,94 @@ const menuEl = document.getElementById('menu');
 const gameOverEl = document.getElementById('game-over');
 const finalScoreEl = document.getElementById('final-score');
 const bestScoreEl = document.getElementById('best-score');
+const survivedTimeEl = document.getElementById('survived-time');
+const muteBtn = document.getElementById('mute-btn');
+const shareToast = document.getElementById('share-toast');
 
 highScoreEl.textContent = highScore;
+
+// === Sound Engine (Web Audio API, zero dependencies) ===
+let audioCtx = null;
+let audioEnabled = true;
+let audioInitialized = false;
+
+function initAudio() {
+  if (audioInitialized) return;
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    audioInitialized = true;
+  } catch(e) {
+    audioEnabled = false;
+    audioInitialized = true; // Mark as attempted so we don't retry
+  }
+}
+
+function playSound(type) {
+  if (!audioEnabled || !audioCtx) return;
+  try {
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    switch(type) {
+      case 'shoot':
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(880, now);
+        osc.frequency.exponentialRampToValueAtTime(440, now + 0.05);
+        gain.gain.setValueAtTime(0.08, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+        osc.start(now);
+        osc.stop(now + 0.05);
+        break;
+      case 'explosion':
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(150, now);
+        osc.frequency.exponentialRampToValueAtTime(30, now + 0.2);
+        gain.gain.setValueAtTime(0.12, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+        osc.start(now);
+        osc.stop(now + 0.2);
+        break;
+      case 'powerup':
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(440, now);
+        osc.frequency.exponentialRampToValueAtTime(880, now + 0.1);
+        gain.gain.setValueAtTime(0.1, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+        osc.start(now);
+        osc.stop(now + 0.15);
+        break;
+      case 'hit':
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(200, now);
+        osc.frequency.exponentialRampToValueAtTime(60, now + 0.15);
+        gain.gain.setValueAtTime(0.15, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+        osc.start(now);
+        osc.stop(now + 0.15);
+        break;
+      case 'gameover':
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(660, now);
+        osc.frequency.exponentialRampToValueAtTime(110, now + 0.5);
+        gain.gain.setValueAtTime(0.1, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+        osc.start(now);
+        osc.stop(now + 0.5);
+        break;
+    }
+  } catch(e) {
+    audioEnabled = false;
+  }
+}
+
+muteBtn.addEventListener('click', () => {
+  audioEnabled = !audioEnabled;
+  muteBtn.textContent = audioEnabled ? '🔊' : '🔇';
+});
 
 // === Game functions ===
 
@@ -185,9 +287,18 @@ function resetGame() {
   score = 0;
   difficulty = 1;
   frameCount = 0;
+  startTime = Date.now();
   scoreEl.textContent = '0';
   livesEl.textContent = '3';
   powerupTextEl.textContent = '';
+}
+
+function formatTime(ms) {
+  const totalSeconds = Math.floor(ms / 1000);
+  if (totalSeconds < 60) return totalSeconds + 's';
+  const mins = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds % 60;
+  return mins + 'm ' + secs.toString().padStart(2, '0') + 's';
 }
 
 function spawnAsteroid() {
@@ -246,6 +357,7 @@ function playerShoot() {
   const cooldown = player.rapidFire ? 5 : 12;
   if (player.shootCooldown > 0) return;
   player.shootCooldown = cooldown;
+  playSound('shoot');
 
   if (player.multiShot) {
     bullets.push({ x: player.x + player.w / 2, y: player.y, vx: 0, vy: -9, size: 3, color: '#f0f' });
@@ -264,6 +376,7 @@ function playerShoot() {
 
 function applyPowerup(type) {
   const duration = 400;
+  playSound('powerup');
   if (type === 'life') {
     player.lives = Math.min(player.lives + 1, 5);
     livesEl.textContent = player.lives;
@@ -425,8 +538,8 @@ function update() {
   if (gameState !== 'playing') return;
   frameCount++;
 
-  // Difficulty ramp
-  difficulty = 1 + Math.floor(score / 500) * 0.3;
+  // Smoother difficulty curve (improved from score/500 to score/200)
+  difficulty = 1 + Math.floor(score / 200) * 0.2;
   if (difficulty > 4) difficulty = 4;
 
   // Player movement
@@ -473,6 +586,7 @@ function update() {
     // Collision with player
     if (!player.shielded && circleRect(a.x, a.y, a.size * 0.8, player.x, player.y, player.w, player.h)) {
       createExplosion(player.x + player.w / 2, player.y + player.h / 2, '#0f0', 20);
+      playSound('hit');
       asteroids.splice(i, 1);
       player.lives--;
       livesEl.textContent = player.lives;
@@ -482,12 +596,15 @@ function update() {
           highScore = score;
           localStorage.setItem('voidRunnerHigh', highScore);
         }
+        const survivedMs = Date.now() - startTime;
+        survivedTimeEl.textContent = formatTime(survivedMs);
         finalScoreEl.textContent = score;
         bestScoreEl.textContent = highScore;
         menuEl.style.display = 'none';
         gameOverEl.style.display = 'block';
         uiOverlay.classList.add('active');
         createExplosion(player.x + player.w / 2, player.y + player.h / 2, '#f00', 50);
+        playSound('gameover');
         continue;
       }
     }
@@ -508,6 +625,7 @@ function update() {
       const a = asteroids[j];
       if (circleCircle(b.x, b.y, b.size, a.x, a.y, a.size * 0.85)) {
         createExplosion(a.x, a.y, '#f80', 15);
+        playSound('explosion');
         asteroids.splice(j, 1);
         bullets.splice(i, 1);
         const points = Math.ceil(a.size);
@@ -632,6 +750,7 @@ function gameLoop() {
 // === Event handlers ===
 
 document.getElementById('start-btn').addEventListener('click', () => {
+  initAudio(); // Initialize audio on first user interaction
   resetGame();
   gameState = 'playing';
   menuEl.style.display = 'none';
@@ -644,6 +763,28 @@ document.getElementById('restart-btn').addEventListener('click', () => {
   gameState = 'playing';
   gameOverEl.style.display = 'none';
   uiOverlay.classList.remove('active');
+});
+
+// Share score to clipboard
+document.getElementById('share-btn').addEventListener('click', () => {
+  const survivedMs = Date.now() - startTime;
+  const survivedStr = formatTime(survivedMs);
+  const text = `🚀 Void Runner\nScore: ${score} | Survived: ${survivedStr}\nHigh Score: ${highScore}\nTry it at: pixel-forge-test.vercel.app\n#VoidRunner`;
+
+  navigator.clipboard.writeText(text).then(() => {
+    shareToast.classList.add('show');
+    setTimeout(() => { shareToast.classList.remove('show'); }, 2000);
+  }).catch(() => {
+    // Fallback for older browsers
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    shareToast.classList.add('show');
+    setTimeout(() => { shareToast.classList.remove('show'); }, 2000);
+  });
 });
 
 // Start
